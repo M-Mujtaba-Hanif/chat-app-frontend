@@ -4,12 +4,17 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
 import ChatSidebar from '@/components/chat/ChatSidebar'
 import ChatWindow from '@/components/chat/ChatWindow'
-import { MessageSquare, Sparkles } from 'lucide-react'
+import { MessageSquare, Users } from 'lucide-react'
+
+type Selection =
+  | { type: 'personal'; id: string; name: string }
+  | { type: 'group'; id: string; name: string }
+  | null
 
 export default function ChatPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
+  const [selected, setSelected] = useState<Selection>(null)
   const [showWindow, setShowWindow] = useState(false)
 
   useEffect(() => {
@@ -17,7 +22,12 @@ export default function ChatPage() {
   }, [user, loading, router])
 
   const handleSelectUser = (userId: string, userName: string) => {
-    setSelectedUser({ id: userId, name: userName })
+    setSelected({ type: 'personal', id: userId, name: userName })
+    setShowWindow(true)
+  }
+
+  const handleSelectGroup = (groupId: string, groupName: string) => {
+    setSelected({ type: 'group', id: groupId, name: groupName })
     setShowWindow(true)
   }
 
@@ -29,48 +39,51 @@ export default function ChatPage() {
 
   return (
     <div className="h-screen flex bg-surface-950 overflow-hidden">
-      {/* Sidebar — always visible on lg, hidden on mobile when chat open */}
       <div className={`${showWindow ? 'hidden lg:flex' : 'flex'} h-full`}>
         <ChatSidebar
-          selectedUserId={selectedUser?.id}
+          selectedId={selected?.id}
+          selectedType={selected?.type}
           onSelectUser={handleSelectUser}
+          onSelectGroup={handleSelectGroup}
         />
       </div>
 
-      {/* Chat Window */}
-      {selectedUser ? (
+      {selected ? (
         <div className={`${showWindow ? 'flex' : 'hidden lg:flex'} flex-1 h-full`}>
-          <ChatWindow
-            otherUserId={selectedUser.id}
-            otherUserName={selectedUser.name}
-            onBack={() => setShowWindow(false)}
-          />
+          {selected.type === 'personal' ? (
+            <ChatWindow
+              type="personal"
+              otherUserId={selected.id}
+              otherUserName={selected.name}
+              onBack={() => setShowWindow(false)}
+            />
+          ) : (
+            <ChatWindow
+              type="group"
+              groupId={selected.id}
+              groupName={selected.name}
+              onBack={() => setShowWindow(false)}
+            />
+          )}
         </div>
       ) : (
         <div className="hidden lg:flex flex-1 h-full items-center justify-center bg-surface-950">
           <div className="text-center">
-            {/* Animated logo */}
-            <div className="relative w-24 h-24 mx-auto mb-6">
-              <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-brand-500/20 to-brand-700/20 animate-pulse" />
-              <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center glow-brand">
-                <MessageSquare size={40} className="text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-accent-500 flex items-center justify-center">
-                <Sparkles size={12} className="text-white" />
-              </div>
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-500/20 to-brand-700/20 border border-brand-500/20 flex items-center justify-center mx-auto mb-5">
+              <MessageSquare size={36} className="text-brand-500/60" />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Your messages</h2>
-            <p className="text-slate-500 text-sm max-w-xs">
-              Select a conversation from the sidebar to start chatting in real-time
-            </p>
-
-            {/* Feature pills */}
-            <div className="flex flex-wrap justify-center gap-2 mt-8">
-              {['⚡ Real-time', '👁️ Read receipts', '✍️ Typing indicators', '🟢 Online status'].map(f => (
-                <span key={f} className="text-xs font-medium px-3 py-1.5 bg-surface-800 border border-slate-700/50 text-slate-400 rounded-full">
-                  {f}
-                </span>
-              ))}
+            <h3 className="text-xl font-semibold text-white mb-2">Your Messages</h3>
+            <p className="text-slate-500 text-sm max-w-xs">Select a conversation from the sidebar, or find new people to chat with.</p>
+            <div className="flex items-center justify-center gap-4 mt-6 text-xs text-slate-600">
+              <div className="flex items-center gap-1.5">
+                <MessageSquare size={12} />
+                <span>Personal chats</span>
+              </div>
+              <div className="w-1 h-1 rounded-full bg-slate-700" />
+              <div className="flex items-center gap-1.5">
+                <Users size={12} />
+                <span>Group rooms</span>
+              </div>
             </div>
           </div>
         </div>

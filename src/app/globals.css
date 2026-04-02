@@ -1,161 +1,41 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --font-outfit: 'Outfit', sans-serif;
-  --font-jetbrains: 'JetBrains Mono', monospace;
+@layer base {
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { @apply bg-surface-950 text-white antialiased; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-slate-700 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-600; }
 }
 
-* {
-  box-sizing: border-box;
+@layer components {
+  .glass {
+    @apply bg-surface-900/80 backdrop-blur-sm border border-slate-800/60;
+  }
+  .input-ring {
+    @apply outline-none border-brand-500/50 ring-1 ring-brand-500/30;
+  }
+  .glow-brand {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.25);
+  }
+  .gradient-text {
+    @apply bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent;
+  }
 }
 
-html, body {
-  height: 100%;
-  margin: 0;
-  padding: 0;
+@layer utilities {
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in { animation: fade-in 0.2s ease-out; }
+  .scroll-smooth { scroll-behavior: smooth; }
 }
-
-body {
-  font-family: var(--font-outfit);
-  background: #0f172a;
-  color: #f1f5f9;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 2px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #475569;
-}
-
-/* Custom selection */
-::selection {
-  background: rgba(99, 102, 241, 0.3);
-  color: #fff;
-}
-
-/* Chat message bubble */
-.bubble-sent {
-  @apply bg-gradient-to-br from-brand-500 to-brand-700 text-white rounded-2xl rounded-br-sm;
-}
-
-.bubble-received {
-  @apply bg-surface-800 text-slate-100 rounded-2xl rounded-bl-sm border border-slate-700/50;
-}
-
-/* Glow effects */
-.glow-brand {
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
-}
-
-.glow-accent {
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
-}
-
-/* Glass morphism */
-.glass {
-  background: rgba(30, 41, 59, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(99, 102, 241, 0.15);
-}
-
-.glass-light {
-  background: rgba(248, 250, 252, 0.08);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-/* Animated gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, #818cf8, #34d399);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Online indicator */
-.online-dot {
-  @apply w-2.5 h-2.5 bg-accent-500 rounded-full border-2 border-surface-900;
-  animation: pulseDot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Input focus ring */
-.input-ring {
-  @apply outline-none ring-2 ring-brand-500/50 border-brand-500;
-}
-
-/* Sidebar active item */
-.sidebar-item-active {
-  @apply bg-brand-600/20 border border-brand-500/30 text-brand-300;
-}
-
-/* Page transition */
-.page-enter {
-  animation: slideUp 0.3s ease-out forwards;
-}
-
-@keyframes pulseDot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.1); }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes messageIn {
-  from { opacity: 0; transform: scale(0.92) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.animate-message-in {
-  animation: messageIn 0.25s ease-out;
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.2s ease-out;
-}
-
-/* Typing dots */
-.typing-dots span {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #818cf8;
-  animation: typingBounce 1.4s infinite ease-in-out;
-}
-.typing-dots span:nth-child(1) { animation-delay: 0s; }
-.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typingBounce {
-  0%, 60%, 100% { transform: translateY(0); }
-  30% { transform: translateY(-6px); }
-}
-
-/* No scrollbar utility */
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

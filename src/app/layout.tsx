@@ -1,21 +1,20 @@
 import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
 import './globals.css'
 import { AuthProvider } from '@/context/AuthContext'
 import { SocketProvider } from '@/context/SocketContext'
 
+const inter = Inter({ subsets: ['latin'] })
+
 export const metadata: Metadata = {
-  title: 'NexChat — Real-Time Messaging',
-  description: 'A beautiful real-time chat application built with Socket.IO',
+  title: 'NexChat – Real-time Messaging',
+  description: 'Connect, collaborate, create with real-time chat',
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className={inter.className}>
         <AuthProvider>
           <SocketProvider>
             {children}
