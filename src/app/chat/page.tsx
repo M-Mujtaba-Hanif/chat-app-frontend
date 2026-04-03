@@ -5,9 +5,10 @@ import { useAuth } from '@/context/AuthContext'
 import ChatSidebar from '@/components/chat/ChatSidebar'
 import ChatWindow from '@/components/chat/ChatWindow'
 import { MessageSquare, Users } from 'lucide-react'
+import { User } from '@/types'
 
 type Selection =
-  | { type: 'personal'; id: string; name: string }
+  | { type: 'personal'; id: string; name: string; user?: User }
   | { type: 'group'; id: string; name: string }
   | null
 
@@ -21,8 +22,8 @@ export default function ChatPage() {
     if (!loading && !user) router.push('/auth/login')
   }, [user, loading, router])
 
-  const handleSelectUser = (userId: string, userName: string) => {
-    setSelected({ type: 'personal', id: userId, name: userName })
+  const handleSelectUser = (userId: string, userName: string, userData?: User) => {
+    setSelected({ type: 'personal', id: userId, name: userName, user: userData })
     setShowWindow(true)
   }
 
@@ -55,6 +56,7 @@ export default function ChatPage() {
               type="personal"
               otherUserId={selected.id}
               otherUserName={selected.name}
+              otherUser={selected.user}
               onBack={() => setShowWindow(false)}
             />
           ) : (

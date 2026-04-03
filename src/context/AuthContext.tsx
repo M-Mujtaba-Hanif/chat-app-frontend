@@ -12,6 +12,7 @@ interface AuthContextType {
   sendOtp: (email: string) => Promise<void>
   verifyOtp: (email: string, code: string) => Promise<void>
   refreshUser: () => Promise<void>
+  updateProfile: (name: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -56,8 +57,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await authApi.verifyOtp(email, code)
   }
 
+  const updateProfile = async (name: string) => {
+    const res = await authApi.updateProfile({ name })
+    setUser(res.data.data)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, sendOtp, verifyOtp, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, sendOtp, verifyOtp, refreshUser, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )

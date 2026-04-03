@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useSocket } from '@/context/SocketContext'
 import { chatApi, groupApi } from '@/lib/api'
@@ -7,7 +7,7 @@ import { Conversation, User, Group, FriendRequest } from '@/types'
 import Avatar from '@/components/ui/Avatar'
 import {
   Search, LogOut, Shield, MessageSquarePlus, Users, UserPlus,
-  Plus, Check, X, RefreshCw, ChevronRight, Globe, UserCheck
+  Plus, Check, X, ChevronRight, Globe, UserCheck, Edit2, Save, MessageSquare
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import Link from 'next/link'
@@ -18,14 +18,15 @@ type Tab = 'chats' | 'users' | 'groups' | 'requests'
 interface ChatSidebarProps {
   selectedId?: string
   selectedType?: 'personal' | 'group'
-  onSelectUser: (userId: string, userName: string) => void
+  onSelectUser: (userId: string, userName: string, user?: User) => void
   onSelectGroup: (groupId: string, groupName: string) => void
 }
 
 export default function ChatSidebar({ selectedId, selectedType, onSelectUser, onSelectGroup }: ChatSidebarProps) {
-  const { user, logout } = useAuth()
-  const { onlineUsers, connected } = useSocket()
+  const { user, logout, updateProfile } = useAuth()
+  const { onlineUsers, unreadCounts, onNewMessage, onNewGroupMessage } = useSocket()
   const router = useRouter()
+
   const [tab, setTab] = useState<Tab>('chats')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [allUsers, setAllUsers] = useState<User[]>([])
@@ -39,6 +40,12 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
   const [newGroupName, setNewGroupName] = useState('')
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
+  // Profile card
+  const [showProfile, setShowProfile] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [nameInput, setNameInput] = useState(user?.name || '')
+  const [savingName, setSavingName] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -82,12 +89,19 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
 
   useEffect(() => { fetchConversations() }, [fetchConversations])
 
+  // Refetch conversations when new message arrives for unread count
+  useEffect(() => {
+    const off1 = onNewMessage(() => fetchConversations())
+    const off2 = onNewGroupMessage(() => { /* groups handle their own */ })
+    return () => { off1(); off2() }
+  }, [onNewMessage, onNewGroupMessage, fetchConversations])
+
   useEffect(() => {
     setLoading(true)
     const tasks: Promise<any>[] = []
     if (tab === 'chats') tasks.push(fetchConversations())
     if (tab === 'users') tasks.push(fetchUsers(), fetchFriends())
-    if (tab === 'groups') tasks.push(fetchGroups())
+    if (tab === 'groups') tasks.push(fetchGroups(), fetchFriends())
     if (tab === 'requests') tasks.push(fetchRequests())
     Promise.all(tasks).finally(() => setLoading(false))
   }, [tab])
@@ -95,6 +109,20 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
   useEffect(() => {
     if (tab === 'users') fetchUsers()
   }, [search, tab])
+
+  // Close profile card on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setShowProfile(false)
+        setEditingName(false)
+      }
+    }
+    if (showProfile) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showProfile])
+
+  useEffect(() => { setNameInput(user?.name || '') }, [user?.name])
 
   const handleLogout = async () => {
     await logout()
@@ -116,10 +144,8 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
       await groupApi.respondFriendRequest(requestId, action)
       showToast(`Request ${action}ed!`)
       fetchRequests()
-      if (action === 'accept') fetchFriends()
-    } catch (err: any) {
-      showToast('Failed', 'error')
-    }
+      if (action === 'accept') { fetchFriends(); fetchConversations() }
+    } catch { showToast('Failed', 'error') }
   }
 
   const handleCreateGroup = async () => {
@@ -139,23 +165,41 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
     } finally { setCreating(false) }
   }
 
-  const getOnlineStatus = (userId: string) =>
-    onlineUsers[userId] === 'online'
+  const handleSaveName = async () => {
+    if (!nameInput.trim() || nameInput.trim() === user?.name) { setEditingName(false); return }
+    setSavingName(true)
+    try {
+      await updateProfile(nameInput.trim())
+      showToast('Name updated!')
+      setEditingName(false)
+    } catch { showToast('Failed to update name', 'error') }
+    finally { setSavingName(false) }
+  }
+
+  const getOnlineStatus = (userId: string) => onlineUsers[userId] === 'online'
 
   const pendingCount = friendRequests.incoming.length
 
-  const TABS: { id: Tab; label: string; icon: any; badge?: number }[] = [
-    { id: 'chats', label: 'Chats', icon: MessageSquarePlus },
-    { id: 'users', label: 'People', icon: Globe },
-    { id: 'groups', label: 'Groups', icon: Users },
-    { id: 'requests', label: 'Requests', icon: UserCheck, badge: pendingCount },
+  // Total unread for chats tab badge
+  const totalChatUnread = conversations.reduce((sum, c) => {
+    const roomUnread = unreadCounts[c.roomId]
+    return sum + (roomUnread !== undefined ? roomUnread : (c.unreadCount || 0))
+  }, 0)
+
+  // Total unread for groups tab
+  const totalGroupUnread = groups.reduce((sum, g) => sum + (unreadCounts[`group:${g.id}`] || 0), 0)
+
+  const TABS = [
+    { id: 'chats' as Tab, label: 'Chats', icon: MessageSquarePlus, badge: totalChatUnread },
+    { id: 'users' as Tab, label: 'People', icon: Globe },
+    { id: 'groups' as Tab, label: 'Groups', icon: Users, badge: totalGroupUnread },
+    { id: 'requests' as Tab, label: 'Requests', icon: UserCheck, badge: pendingCount },
   ]
 
   return (
     <aside className="w-80 h-full flex flex-col bg-surface-900 border-r border-slate-800/60 relative">
-      {/* Toast */}
       {toast && (
-        <div className={`absolute top-4 left-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium text-white shadow-lg transition-all ${toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+        <div className={`absolute top-4 left-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium text-white shadow-lg ${toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
           {toast.msg}
         </div>
       )}
@@ -170,8 +214,8 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
             <div>
               <span className="text-white font-bold text-base">NexChat</span>
               <div className="flex items-center gap-1 mt-0.5">
-                <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-slate-600'}`} />
-                <span className="text-xs text-slate-500">{connected ? 'Connected' : 'Offline'}</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${onlineUsers ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+                <span className="text-xs text-slate-500">Connected</span>
               </div>
             </div>
           </div>
@@ -181,20 +225,81 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
                 <Shield size={16} />
               </Link>
             )}
-            <button onClick={handleLogout} className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all" title="Logout">
-              <LogOut size={16} />
-            </button>
           </div>
         </div>
 
-        {/* User mini profile */}
-        <div className="flex items-center gap-2.5 px-3 py-2 bg-surface-800/60 rounded-xl mb-3">
-          <Avatar name={user?.name || ''} avatar={user?.avatar} size="sm" online={true} />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">{user?.name}</p>
-            <p className="text-xs text-slate-500 truncate">{user?.email}</p>
-          </div>
-          <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+        {/* Profile mini card - clickable */}
+        <div className="relative" ref={profileRef}>
+          <button
+            onClick={() => { setShowProfile(v => !v); setEditingName(false) }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 bg-surface-800/60 rounded-xl mb-3 hover:bg-surface-800 transition-all text-left"
+          >
+            <Avatar name={user?.name || ''} avatar={user?.avatar} size="sm" online={true} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate">{user?.name}</p>
+              <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+            </div>
+            <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+          </button>
+
+          {/* Profile Dropdown Card */}
+          {showProfile && (
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-surface-800 border border-slate-700/60 rounded-xl shadow-2xl p-4 animate-fade-in">
+              {/* Avatar large */}
+              <div className="flex flex-col items-center mb-4">
+                <Avatar name={user?.name || ''} avatar={user?.avatar} size="xl" online={true} />
+                <div className="mt-2 text-xs text-emerald-400 font-medium">● Online</div>
+              </div>
+
+              {/* Name edit */}
+              <div className="mb-3">
+                <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wider font-semibold">Display Name</p>
+                {editingName ? (
+                  <div className="flex gap-2">
+                    <input
+                      value={nameInput}
+                      onChange={e => setNameInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+                      autoFocus
+                      className="flex-1 bg-surface-900 border border-brand-500/50 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none"
+                      placeholder="Enter name..."
+                    />
+                    <button
+                      onClick={handleSaveName}
+                      disabled={savingName}
+                      className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs rounded-lg transition-all disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {savingName ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> : <Save size={12} />}
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between bg-surface-900 rounded-lg px-3 py-2">
+                    <span className="text-sm text-white font-medium">{user?.name}</span>
+                    <button onClick={() => setEditingName(true)} className="text-slate-500 hover:text-brand-400 transition-colors">
+                      <Edit2 size={13} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Email */}
+              <div className="mb-4">
+                <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wider font-semibold">Email</p>
+                <div className="bg-surface-900 rounded-lg px-3 py-2">
+                  <p className="text-sm text-slate-400 truncate">{user?.email}</p>
+                </div>
+              </div>
+
+              {/* Logout */}
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-medium transition-all border border-red-500/20"
+              >
+                <LogOut size={14} /> Sign Out
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Search */}
@@ -219,7 +324,9 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
             <t.icon size={14} />
             {t.label}
             {t.badge ? (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{t.badge}</span>
+              <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1">
+                {t.badge > 99 ? '99+' : t.badge}
+              </span>
             ) : null}
           </button>
         ))}
@@ -227,43 +334,50 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
+
         {/* CHATS TAB */}
         {tab === 'chats' && (
           <div>
             {conversations.length === 0 && !loading && (
               <div className="flex flex-col items-center justify-center py-12 text-slate-600">
-                <MessageSquarePlus size={32} className="mb-2 opacity-40" />
+                <MessageSquare size={32} className="mb-2 opacity-40" />
                 <p className="text-sm">No conversations yet</p>
                 <button onClick={() => setTab('users')} className="mt-2 text-xs text-brand-400 hover:underline">Find people</button>
               </div>
             )}
             {conversations
               .filter(c => c.user?.name?.toLowerCase().includes(search.toLowerCase()))
-              .map(c => (
-                <button
-                  key={c.roomId}
-                  onClick={() => onSelectUser(c.user.id, c.user.name)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-800/60 transition-all ${selectedId === c.user.id && selectedType === 'personal' ? 'bg-surface-800 border-r-2 border-brand-500' : ''}`}
-                >
-                  <Avatar name={c.user.name} avatar={c.user.avatar} size="md" online={getOnlineStatus(c.user.id)} />
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-white truncate">{c.user.name}</span>
-                      <span className="text-xs text-slate-600 shrink-0 ml-2">
-                        {formatDistanceToNow(new Date(c.lastMessage.createdAt), { addSuffix: false })}
-                      </span>
+              .map(c => {
+                const roomUnread = unreadCounts[c.roomId] !== undefined ? unreadCounts[c.roomId] : (c.unreadCount || 0)
+                const isSelected = selectedId === c.user.id && selectedType === 'personal'
+                return (
+                  <button
+                    key={c.roomId}
+                    onClick={() => onSelectUser(c.user.id, c.user.name, c.user)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-800/60 transition-all ${isSelected ? 'bg-surface-800 border-r-2 border-brand-500' : ''}`}
+                  >
+                    <Avatar name={c.user.name} avatar={c.user.avatar} size="md" online={getOnlineStatus(c.user.id)} />
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm truncate ${roomUnread > 0 ? 'font-bold text-white' : 'font-semibold text-white'}`}>{c.user.name}</span>
+                        <span className="text-xs text-slate-600 shrink-0 ml-2">
+                          {formatDistanceToNow(new Date(c.lastMessage.createdAt), { addSuffix: false })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <p className={`text-xs truncate ${roomUnread > 0 ? 'text-white font-medium' : 'text-slate-500'}`}>
+                          {c.lastMessage.senderId === user?.id ? 'You: ' : ''}{c.lastMessage.message}
+                        </p>
+                        {roomUnread > 0 && (
+                          <span className="min-w-[18px] h-4.5 bg-brand-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1.5 shrink-0 ml-1">
+                            {roomUnread > 99 ? '99+' : roomUnread}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between mt-0.5">
-                      <p className={`text-xs truncate ${!c.lastMessage.read && c.lastMessage.senderId !== user?.id ? 'text-white font-medium' : 'text-slate-500'}`}>
-                        {c.lastMessage.senderId === user?.id ? 'You: ' : ''}{c.lastMessage.message}
-                      </p>
-                      {!c.lastMessage.read && c.lastMessage.senderId !== user?.id && (
-                        <span className="w-2 h-2 bg-brand-500 rounded-full shrink-0 ml-1" />
-                      )}
-                    </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                )
+              })}
           </div>
         )}
 
@@ -282,7 +396,7 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
                   <div className="flex items-center gap-1 shrink-0">
                     {isFriend ? (
                       <button
-                        onClick={() => onSelectUser(u.id, u.name)}
+                        onClick={() => onSelectUser(u.id, u.name, u)}
                         className="flex items-center gap-1 px-2.5 py-1.5 bg-brand-500/15 text-brand-400 text-xs font-medium rounded-lg hover:bg-brand-500/25 transition-all"
                       >
                         <MessageSquarePlus size={12} /> Chat
@@ -328,7 +442,7 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
                   placeholder="Group name"
                   className="w-full bg-surface-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 mb-3 focus:outline-none focus:border-brand-500/50"
                 />
-                <p className="text-xs text-slate-500 mb-2">Add friends as members:</p>
+                <p className="text-xs text-slate-500 mb-2">Add friends:</p>
                 <div className="max-h-32 overflow-y-auto space-y-1 mb-3">
                   {friends.map(f => (
                     <label key={f.id} className="flex items-center gap-2 cursor-pointer">
@@ -355,22 +469,34 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
 
             {groups
               .filter(g => g.name.toLowerCase().includes(search.toLowerCase()))
-              .map(g => (
-                <button
-                  key={g.id}
-                  onClick={() => onSelectGroup(g.id, g.name)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-800/60 transition-all ${selectedId === g.id && selectedType === 'group' ? 'bg-surface-800 border-r-2 border-brand-500' : ''}`}
-                >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0">
-                    <span className="text-white text-sm font-bold">{g.name[0].toUpperCase()}</span>
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <p className="text-sm font-semibold text-white truncate">{g.name}</p>
-                    <p className="text-xs text-slate-500">{g.Members?.length || 0} members</p>
-                  </div>
-                  <ChevronRight size={14} className="text-slate-600" />
-                </button>
-              ))}
+              .map(g => {
+                const gUnread = unreadCounts[`group:${g.id}`] || 0
+                const isSelected = selectedId === g.id && selectedType === 'group'
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => onSelectGroup(g.id, g.name)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-800/60 transition-all ${isSelected ? 'bg-surface-800 border-r-2 border-brand-500' : ''}`}
+                  >
+                    <div className="relative shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
+                        <span className="text-white text-sm font-bold">{g.name[0].toUpperCase()}</span>
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className={`text-sm truncate ${gUnread > 0 ? 'font-bold text-white' : 'font-semibold text-white'}`}>{g.name}</p>
+                      <p className="text-xs text-slate-500">{g.Members?.length || 0} members</p>
+                    </div>
+                    {gUnread > 0 ? (
+                      <span className="min-w-[18px] h-5 bg-brand-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1.5 shrink-0">
+                        {gUnread > 99 ? '99+' : gUnread}
+                      </span>
+                    ) : (
+                      <ChevronRight size={14} className="text-slate-600" />
+                    )}
+                  </button>
+                )
+              })}
 
             {groups.length === 0 && !showCreateGroup && (
               <div className="flex flex-col items-center justify-center py-8 text-slate-600">
@@ -406,7 +532,6 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
                 ))}
               </div>
             )}
-
             {friendRequests.outgoing.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Sent ({friendRequests.outgoing.length})</p>
@@ -422,7 +547,6 @@ export default function ChatSidebar({ selectedId, selectedType, onSelectUser, on
                 ))}
               </div>
             )}
-
             {friendRequests.incoming.length === 0 && friendRequests.outgoing.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-slate-600">
                 <UserCheck size={28} className="mb-2 opacity-40" />

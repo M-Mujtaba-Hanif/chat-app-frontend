@@ -9,10 +9,17 @@ export interface User {
   isOnlineStatus?: boolean
   isOnlineNow?: boolean
   lastSeen?: string
+  lastLogin?: string
   googleId?: string
   facebookId?: string
   createdAt?: string
   updatedAt?: string
+}
+
+export interface ReplyTo {
+  id: string
+  message: string
+  senderId: string
 }
 
 export interface Message {
@@ -24,7 +31,10 @@ export interface Message {
   roomId: string
   type: 'personal' | 'group'
   read: boolean
+  delivered?: boolean
   deletedForAll?: boolean
+  replyToId?: string
+  ReplyTo?: ReplyTo
   createdAt: string
   updatedAt: string
   Sender?: { id: string; name: string; avatar?: string }
@@ -40,6 +50,7 @@ export interface Conversation {
     read: boolean
   }
   user: User
+  unreadCount: number
 }
 
 export interface Group {
@@ -48,6 +59,7 @@ export interface Group {
   description?: string
   avatar?: string
   createdBy: string
+  onlyAdminCanSend?: boolean
   Creator?: User
   Members?: (User & { GroupMember: { role: string; joinedAt: string } })[]
   createdAt: string
